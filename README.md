@@ -25,7 +25,14 @@ a modest, cheap reflex, and it's deliberately all we claim.
 
 ## Install — point it at your facts
 
-Works in any Claude Code (or any MCP client) — no plugin UI needed:
+Works in any Claude Code (or any MCP client) — no plugin UI needed. **Zero-install with `npx`** (needs
+Node and Python 3 — no clone, no pip):
+
+```
+claude mcp add drillable-context -- npx -y drillable-context --facts-dir /path/to/your/docs --name context
+```
+
+Or **from a clone**, if you'd rather skip npm:
 
 ```
 claude mcp add drillable-context -- python3 /abs/path/src/server.py --facts-dir /path/to/your/docs --name context
@@ -144,6 +151,9 @@ treat it as a guarantee that no secret can ever reach the index.
 
 - **Stdlib only** — no pip install; Python 3. Embeddings call OpenAI over `urllib` (an `OPENAI_API_KEY`,
   not a dependency); without one, retrieval falls back to the keyword scorer automatically.
+- **`npx` is just a launcher.** The npm package is a tiny zero-dependency Node shim that spawns the
+  bundled Python server (`src/server.py`) with your args and inherits its stdio — it adds no npm runtime
+  deps and no Python packages. Set `DRILLABLE_PYTHON` to choose the interpreter.
 - **Retrieval scales.** Keyword is fine for a small corpus or when you query in the docs' own words; for
   a real repo, set `"embed": true` — semantic retrieval gets ~94% recall@3 vs ~67% for keyword (and
   100% on natural-language questions). An off-topic query still returns "no record" (a cosine floor).
@@ -153,4 +163,4 @@ treat it as a guarantee that no secret can ever reach the index.
   working in the meantime via backward compatibility.
 - **Status: prototype, validated.** A bluff-rate eval passed (grounding cut confident-wrong answers
   29% → 0% and 43% → 100% correct on facts the agent couldn't know), and retrieval scales (above).
-  Still ahead: npx packaging and a real external user.
+  Still ahead: a real external user.

@@ -1,0 +1,36 @@
+{
+  "name": "drillable-context",
+  "version": "0.1.0",
+  "description": "Grounds your coding agent in YOUR project's facts — your docs, decisions, and conventions — so it drills them instead of guessing, and says \"no record\" instead of bluffing. A local, stdlib-only MCP server over a folder of markdown you point it at.",
+  "bin": {
+    "drillable-context": "bin/drillable-context.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "configs/config.example.json",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "keywords": [
+    "grounding",
+    "context",
+    "memory",
+    "conventions",
+    "drillable",
+    "mcp",
+    "claude",
+    "agent"
+  ],
+  "author": "Drillable (https://drillable.com)",
+  "homepage": "https://drillable.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/drillablehq/drillable-context.git"
+  },
+  "bugs": {
+    "url": "https://github.com/drillablehq/drillable-context/issues"
+  }
+}
