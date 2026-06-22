@@ -100,6 +100,10 @@ Everything is local: your facts never leave your machine, the server is a local 
 no network), and the index is a file in this folder. The eventual paid tier is *more* privacy
 (no-log, self-host), not less.
 
+It also **follows your repo's `.gitignore`** (when the facts dir is a git repo): anything ignored —
+build artifacts, vendored deps, and crucially **secrets** like `.env` or key files — is never indexed,
+and never sent to OpenAI even with semantic retrieval on. So you can safely point it at a repo root.
+
 ## Notes
 
 - **Stdlib only** — no pip install; Python 3. Embeddings call OpenAI over `urllib` (an `OPENAI_API_KEY`,

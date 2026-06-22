@@ -123,17 +123,35 @@ def main():
     titles = parse_index_titles(facts_dir, index_file)
     recursive = cfg.get("recursive", True)
     exclude = cfg.get("exclude", [])
-    pattern = os.path.join(facts_dir, "**", "*.md") if recursive else os.path.join(facts_dir, "*.md")
+    respect_gitignore = cfg.get("respect_gitignore", True)
+
+    # Prefer git: list .md that git does NOT ignore — skips node_modules, build output, AND secrets
+    # (.env / keys are almost always gitignored, so they're never indexed or embedded). Falls back to
+    # a plain glob when facts_dir isn't inside a git repo.
+    candidates = None
+    if respect_gitignore:
+        try:
+            r = subprocess.run(["git", "-C", facts_dir, "ls-files", "--cached", "--others",
+                                "--exclude-standard", "-z"], capture_output=True, text=True, timeout=20)
+            if r.returncode == 0:
+                candidates = [os.path.join(facts_dir, p) for p in r.stdout.split("\0") if p.endswith(".md")]
+        except Exception:
+            candidates = None
+    if candidates is None:
+        pattern = os.path.join(facts_dir, "**", "*.md") if recursive else os.path.join(facts_dir, "*.md")
+        candidates = glob.glob(pattern, recursive=recursive)
 
     def _keep(p):
-        rel = p[len(facts_dir):]
-        if os.sep + "." in rel:                                  # skip dot-dirs
+        rel = os.path.relpath(p, facts_dir)
+        if not recursive and os.sep in rel:                      # top-level only
+            return False
+        if os.sep + "." in os.sep + rel:                         # skip dot-dirs/files
             return False
         if os.path.basename(p) == (index_file or ""):            # the index isn't a fact
             return False
-        return not any(x in rel for x in exclude)                # config excludes (dirs / filenames)
+        return not any(x in rel for x in exclude)                # extra config excludes (e.g. tracked dirs)
 
-    files = sorted(p for p in glob.glob(pattern, recursive=recursive) if _keep(p))
+    files = sorted(p for p in candidates if _keep(p))
     counts = {"standing": 0, "queryable": 0, "cited": 0, "provenance": 0, "judgment": 0, "ok": 0}
     embed_rows = []
     seen_slugs = set()
