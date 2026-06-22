@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """seed.py — build a private-facts corpus DB from a directory of markdown facts.
 
-Config-driven (the shippable generalization of the bootable-spec memory/method dogfoods): point it at
+Config-driven: point it at
 ANY folder of `*.md` — your CLAUDE.md, your docs/, your decisions/notes — and it derives a queryable,
 citation-grounded store. The `.md` files stay the SOURCE OF TRUTH; the DB is a rebuilt build artifact.
 
@@ -9,13 +9,13 @@ citation-grounded store. The `.md` files stay the SOURCE OF TRUTH; the DB is a r
 
 config.json:
   {
-    "name":           "memory",                 # corpus name → <name>.db, the MCP server name
+    "name":           "context",                # corpus name → <name>.db, the MCP server name
     "facts_dir":      "/abs/path/to/markdown",  # where the facts live (recursive *.md)
     "oracle_repo":    "/abs/path/to/repo",      # OPTIONAL: re-resolve file/PR anchors here (the
                                                 #   stronger oracle); null → ground against the .md itself
-    "standing_types": ["feedback", "user"],     # frontmatter `type` values that stay ALWAYS-LOADED
+    "standing_types": ["preference"],           # frontmatter `type` values that stay ALWAYS-LOADED
     "type_field":     "type",                   # frontmatter field carrying the type (default "type")
-    "index_file":     "MEMORY.md"               # OPTIONAL: "- [Title](slug.md) — hook" lines for titles
+    "index_file":     "INDEX.md"                # OPTIONAL: "- [Title](slug.md) — hook" lines for titles
   }
 
 THE SPLIT: standing (must fire every turn — preferences/standing instructions) vs queryable (the
