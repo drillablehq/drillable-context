@@ -25,7 +25,10 @@ def resolve(argv):
     ap.add_argument("--facts-dir")
     ap.add_argument("--name", default="context")
     ap.add_argument("--oracle-repo")
-    ap.add_argument("--standing-types", default="")
+    # Default to "preference" so a one-click plugin / bare-CLI install (whose .mcp.json passes no
+    # --standing-types) still classifies preference facts as standing — otherwise context_standing
+    # always returns nothing. Pass --standing-types "" to opt out, or a CSV to set your own types.
+    ap.add_argument("--standing-types", default="preference")
     ap.add_argument("--embed", action="store_true")
     ap.add_argument("--db")
     a, _ = ap.parse_known_args(argv)

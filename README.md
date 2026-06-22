@@ -1,6 +1,6 @@
 # drillable-context
 
-*(provisional name — the engine that grounds a coding agent in **your own project's facts**.)*
+*The engine that grounds a coding agent in **your own project's facts**.*
 
 Your coding agent forgets. It contradicts a decision you made last week, invents a convention you
 never set, "remembers" your API the way it wishes it worked. This points the agent at *your* facts —
@@ -117,13 +117,12 @@ treat it as a guarantee that no secret can ever reach the index.
 - **Stdlib only** — no pip install; Python 3. Embeddings call OpenAI over `urllib` (an `OPENAI_API_KEY`,
   not a dependency); without one, retrieval falls back to the keyword scorer automatically.
 - **Retrieval scales.** Keyword is fine for a small corpus or when you query in the docs' own words; for
-  a real repo, set `"embed": true` — semantic retrieval gets ~94% recall@3 (100% on natural-language
-  questions) where keyword drops to 54%. An off-topic query still returns "no record" (a cosine floor).
+  a real repo, set `"embed": true` — semantic retrieval gets ~94% recall@3 vs ~67% for keyword (and
+  100% on natural-language questions). An off-topic query still returns "no record" (a cosine floor).
 - **MCP**: the server speaks stdio JSON-RPC and negotiates the client's protocol version (verified
   spec-correct against the MCP reference as of revision 2025-11-25). The 2026-07-28 MCP release
   candidate removes the `initialize` handshake; this server will need a small update then, and keeps
   working in the meantime via backward compatibility.
 - **Status: prototype, validated.** A bluff-rate eval passed (grounding cut confident-wrong answers
   29% → 0% and 43% → 100% correct on facts the agent couldn't know), and retrieval scales (above).
-  Full results in `eval/RESULTS.md`. Still ahead: a name, packaging (one-click plugin / npx), and a
-  real external user — see the project's open recommendation.
+  Still ahead: npx packaging and a real external user.

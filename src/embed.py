@@ -17,19 +17,10 @@ import urllib.request
 
 ENDPOINT = "https://api.openai.com/v1/embeddings"
 MODEL = os.environ.get("DRILLABLE_EMBED_MODEL", "text-embedding-3-small")
-ENV_FILE = os.path.expanduser("~/.config/bootable/.env")
 
 
 def _key():
-    k = os.environ.get("OPENAI_API_KEY")
-    if k:
-        return k
-    if os.path.exists(ENV_FILE):
-        for line in open(ENV_FILE, encoding="utf-8"):
-            line = line.strip()
-            if line.startswith("OPENAI_API_KEY") and "=" in line:
-                return line.split("=", 1)[1].strip().strip('"').strip("'")
-    return None
+    return os.environ.get("OPENAI_API_KEY")
 
 
 def available():
