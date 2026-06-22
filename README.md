@@ -38,9 +38,14 @@ Add `-s user` for all projects; `-e DRILLABLE_EMBED=true` for semantic retrieval
 **One-click, if your client has the plugin UI** (`/plugin`) or the `claude plugin` CLI:
 
 ```
-claude plugin marketplace add drillablehq/drillable-context   # or a local path
-claude plugin install drillable-context@drillable
+/plugin marketplace add drillablehq/drillable-context   # or a local path
+/plugin install drillable-context@drillable
 ```
+
+That same `drillable` marketplace also carries **use-drillable** (makes your agent reach for cited
+*reference* facts — the MCP spec, units, networking, …) — add it too with
+`/plugin install use-drillable@drillable`. It's the same marketplace whichever repo you add it from.
+All the developer tools are at [drillable.com/dev](https://drillable.com/dev).
 
 It prompts for your facts directory at enable (the `userConfig`) — nothing to type. Ships **disabled**:
 it reads your files (and, if you opt into semantic retrieval, sends their text to OpenAI to embed), so
