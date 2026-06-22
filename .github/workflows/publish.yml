@@ -1,0 +1,40 @@
+# Publishes drillable-context (the root npm package behind `npx drillable-context`) on a published
+# GitHub Release. Mirror of drillablehq/drillable-check's publish-cli.yml, adapted for the root package.
+#
+# ONE-TIME SETUP (repo admin): add an npm automation token as the `NPM_TOKEN` Actions secret
+#   (npmjs.com -> Access Tokens -> Generate -> "Automation"; Settings -> Secrets and variables -> Actions).
+# TO SHIP: ensure package.json's version matches, merge, then cut a GitHub Release tagged v<version>
+#   (e.g. v0.1.0). The tag==version guard blocks a mismatched publish; provenance signs the build.
+name: publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write          # required for `npm publish --provenance`
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - name: Release tag must match package.json version
+        if: github.event_name == 'release'
+        run: |
+          PKG="$(node -p "require('./package.json').version")"
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$PKG" != "$TAG" ]; then
+            echo "::error::release tag ${GITHUB_REF_NAME} does not match version ${PKG} - bump package.json or retag"
+            exit 1
+          fi
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
