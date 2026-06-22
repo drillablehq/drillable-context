@@ -100,9 +100,12 @@ Everything is local: your facts never leave your machine, the server is a local 
 no network), and the index is a file in this folder. The eventual paid tier is *more* privacy
 (no-log, self-host), not less.
 
-It also **follows your repo's `.gitignore`** (when the facts dir is a git repo): anything ignored —
-build artifacts, vendored deps, and crucially **secrets** like `.env` or key files — is never indexed,
-and never sent to OpenAI even with semantic retrieval on. So you can safely point it at a repo root.
+It also **follows your repo's `.gitignore`** (when the facts dir is a git repo): ignored files —
+build artifacts, vendored deps, and **gitignored secrets** like `.env` or keys — are never indexed or
+sent to OpenAI. *Honest scope:* this skips *ignored* files (the common case for secrets) — it is **not**
+a secret-scanner; a secret that's committed or sits inside a *tracked* file would still be indexed.
+So you can point at a repo root without dragging in build junk or your ignored secrets — but don't
+treat it as a guarantee that no secret can ever reach the index.
 
 ## Notes
 
