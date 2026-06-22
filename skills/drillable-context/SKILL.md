@@ -24,6 +24,11 @@ to assert something *about this codebase* that your priors would fill in, drill 
   `context_standing` — honor it.
 - **An abstention is honest.** "No record" means the project hasn't documented it — surface that and
   ask, don't fabricate a plausible answer.
+- **The boundary — name it or drill it.** If the fact lives in one place you can *point to*, open that
+  file and read it. If it's *scattered* across the project's docs — a decision, a convention, a gotcha
+  you'd fill in from how projects *usually* work — you don't know which file, so you're one step from
+  guessing: that's the drill case. The assumption you'd otherwise make is precisely the confident-wrong
+  answer this prevents.
 
 The corpus grades a claim only by whether it still resolves to the source it cites — an anti-bluff
 reflex over your own project's docs, not a general-knowledge oracle.
