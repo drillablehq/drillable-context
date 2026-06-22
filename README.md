@@ -33,7 +33,8 @@ claude mcp add drillable-context -- python3 /abs/path/src/server.py --facts-dir 
 
 Add `-s user` for all projects; `-e DRILLABLE_EMBED=true` for semantic retrieval (uses your
 `OPENAI_API_KEY`). Restart and your agent gets `context_search` / `context_get` / `context_standing` /
-`context_stats`; the index builds itself on the first call.
+`context_stats`; the index builds itself on the first call, and the running server rebuilds it when you
+edit or add a fact — the next query reflects the change (no restart, no manual reseed).
 
 **One-click, if your client has the plugin UI** (`/plugin`) or the `claude plugin` CLI:
 
@@ -98,6 +99,33 @@ Each fact is labelled honestly:
   not live-checkable.
 - **judgment** — a preference with no external source. Stored and served, **never** labelled
   "verified." (Grading a preference against itself would be circular.)
+
+## Frontmatter conventions
+
+Facts are just markdown. An **optional** YAML frontmatter block tells the engine how to file each one —
+every key is optional, and a plain `.md` with no frontmatter still indexes fine.
+
+```markdown
+---
+type: preference              # the split: in your standing_types → standing; otherwise queryable
+originSessionId: 6f1e9c20     # provenance: the session it was decided in (the log may be long gone)
+description: Tabs, not spaces # title fallback when the body has no "# heading"
+---
+We indent with tabs, never spaces — see src/format.py.
+```
+
+- **`type:`** (or whatever key you set as `type_field`) drives **the split**. A fact whose `type` is one
+  of your `standing_types` (e.g. `preference`) is **standing** — always loaded, and grounded **judgment**
+  (a preference isn't graded against a source). Every other `type` is **queryable**, fetched on demand.
+- **`originSessionId:`** drives **provenance**. A queryable fact that names no file or PR but records
+  where it was decided is grounded **provenance** (dated, not live-checkable) rather than bare judgment.
+- Naming a **file path or `#PR`** anywhere — body or frontmatter — makes a queryable fact **cited**: it
+  drills to that source. This one needs no frontmatter at all.
+
+**Plain markdown works.** Point it at a bare `CLAUDE.md` or a `docs/` tree with no frontmatter and every
+fact is queryable — grounded **cited** where it names files, **judgment** otherwise. You just don't get
+the standing/queryable split or dated provenance until you add the keys; the grounding ladder stays flat
+by design, not by failure.
 
 ## Privacy
 

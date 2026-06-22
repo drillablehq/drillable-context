@@ -29,8 +29,33 @@ def load_cfg(argv):
     return config.resolve(argv)
 
 
+def facts_mtime(cfg):
+    """Newest mtime among the facts dir's *.md files — the freshness signal for reindex-on-change.
+    Catches in-place edits and new files (a re-seed rebuilds the whole corpus from the current files,
+    so renames are covered too); a pure delete is the one case left for a manual reseed/restart.
+    Tracking *.md files only — not directory mtimes — keeps editor swap-file churn, and our own DB
+    write when the DB lives inside the facts dir, from forcing spurious rebuilds. Skips dot-dirs (no
+    .git walk); returns 0.0 if the dir is gone, so a vanished facts_dir keeps the last good DB."""
+    root = cfg["facts_dir"]
+    if not os.path.isdir(root):
+        return 0.0
+    newest = 0.0
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        if not cfg.get("recursive", True):
+            dirnames[:] = []
+        for f in filenames:
+            if f.endswith(".md"):
+                with contextlib.suppress(OSError):
+                    newest = max(newest, os.stat(os.path.join(dirpath, f)).st_mtime)
+    return newest
+
+
 def con(cfg):
-    if not os.path.exists(cfg["_db"]):
+    db = cfg["_db"]
+    # (Re)seed when the DB is absent OR a fact changed since it was built — so the running server reflects
+    # edits, not a stale snapshot. seed.main() rebuilds in place (the .md stay the source of truth).
+    if not os.path.exists(db) or facts_mtime(cfg) > os.path.getmtime(db):
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import seed
         with contextlib.redirect_stdout(sys.stderr):  # seed reads the SAME sys.argv the server got
@@ -38,7 +63,7 @@ def con(cfg):
                 seed.main()
             except SystemExit:
                 pass
-    c = sqlite3.connect(cfg["_db"])
+    c = sqlite3.connect(db)
     c.row_factory = sqlite3.Row
     return c
 
@@ -48,6 +73,7 @@ def toks(s):
 
 
 EMBED_FLOOR = 0.30  # cosine below this ≈ off-topic → abstain (text-embedding-3-small; tunable, cf. gateway nearest.ts)
+KEYWORD_FLOOR = 2   # keyword: pass on a title hit OR ≥ this body/overlap weight; a lone common-word body match (=1) abstains
 
 
 def v_search(cfg, query=""):
@@ -61,13 +87,14 @@ def v_search(cfg, query=""):
     if qvec is not None:                       # embedding retrieval + cosine floor (keeps the honest abstain)
         ranked = sorted(((embed.cosine(qvec, json.loads(r["vector"])), r) for r in rows), key=lambda x: -x[0])
         scored = [(s, r) for s, r in ranked if s >= EMBED_FLOOR][:8]
-    else:                                      # keyword fallback — abstains when no token overlaps
+    else:                                      # keyword fallback — abstains on no overlap AND on a lone weak match
         q = set(toks(query))
         scored = []
         for r in rows:
             tt, bt = set(toks(r["title"])), toks(r["body"])
-            sc = 3 * sum(t in q for t in tt) + sum(min(bt.count(t), 3) for t in q)
-            if sc:
+            title_hits = sum(t in q for t in tt)
+            sc = 3 * title_hits + sum(min(bt.count(t), 3) for t in q)
+            if title_hits or sc >= KEYWORD_FLOOR:   # floor: a single common-word body overlap (sc=1) abstains
                 scored.append((sc, r))
         scored.sort(key=lambda x: -x[0])
         scored = scored[:8]
