@@ -72,7 +72,9 @@ serve it over MCP. To drive it from a config file (and customize the split / ora
      "oracle_repo": "/path/to/your/repo",    // optional — re-check file/PR references here
      "standing_types": ["preference"],        // frontmatter types that stay always-loaded
      "recursive": true,
-     "embed": true                            // semantic retrieval (needs OPENAI_API_KEY); omit → keyword
+     "embed": true,                           // semantic retrieval (needs OPENAI_API_KEY); omit → keyword
+     "track_drift": false                     // flag a fact whose cited source changed after it (re-verify);
+                                              //   off by default — see "Freshness" below
    }
    ```
 2. **Build the index** (the `.md` stay the source of truth; the DB is rebuilt every run):
@@ -107,6 +109,21 @@ Each fact is labelled honestly:
 - **judgment** — a preference with no external source. Stored and served, **never** labelled
   "verified." (Grading a preference against itself would be circular.)
 
+## Freshness — every fact is dated, and (optionally) flagged when its source moves
+
+A fact is always **as-of** something: a decision can be reversed next week. So each fact is stamped
+with when it last changed (its git commit date, or file mtime if the folder isn't a git repo) — shown
+in `get` and used to reason about staleness. This is always on and noise-free.
+
+**Drift (opt-in, `track_drift: true`).** For a **cited** fact, the engine can compare its date against
+the last-change date of each source it cites (in `oracle_repo`); if a cited source changed *after* the
+fact was written, the fact is flagged **"⚠ may be stale — re-verify"** (a prompt to check, not a claim
+it's wrong). It's **off by default on purpose**: when your facts live *with* the code they describe (a
+co-evolving monorepo), nearly everything trips the flag and it cries wolf — measured ~82% on one repo.
+It's real signal when your facts are a **separate, slower-moving `docs/`** pointed at a distinct code
+`oracle_repo`. An optional `change_rate:` frontmatter field (e.g. `fast` / `slow`) is surfaced alongside
+the date as an author hint about how quickly that fact decays.
+
 ## Frontmatter conventions
 
 Facts are just markdown. An **optional** YAML frontmatter block tells the engine how to file each one —
@@ -117,6 +134,7 @@ every key is optional, and a plain `.md` with no frontmatter still indexes fine.
 type: preference              # the split: in your standing_types → standing; otherwise queryable
 originSessionId: 6f1e9c20     # provenance: the session it was decided in (the log may be long gone)
 description: Tabs, not spaces # title fallback when the body has no "# heading"
+change_rate: slow             # OPTIONAL hint: how fast this fact decays (surfaced beside its as-of date)
 ---
 We indent with tabs, never spaces — see src/format.py.
 ```

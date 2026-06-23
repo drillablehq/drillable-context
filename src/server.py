@@ -97,7 +97,7 @@ def v_search(cfg, query=""):
         return "empty query."
     rows = con(cfg).execute(
         "SELECT c.slug AS slug, c.heading AS heading, c.text AS text, c.vector AS vector, "
-        "m.title AS title, m.grounding AS grounding "
+        "m.title AS title, m.grounding AS grounding, m.stale AS stale "
         "FROM chunk c JOIN memory m ON m.slug = c.slug WHERE m.serving='queryable'").fetchall()
     qvec = None
     if rows and all(r["vector"] for r in rows) and embed.available():
@@ -125,8 +125,9 @@ def v_search(cfg, query=""):
     out = [f'search "{query}" → top {len(scored)}:']
     for sc, r in scored:
         sec = f" § {r['heading']}" if r["heading"] else ""
+        warn = " ⚠ may be stale" if (r["stale"] and r["stale"] != "[]") else ""
         snip = re.sub(r"\s+", " ", r["text"])[:140]
-        out.append(f"\n({sc:.2f}) {r['slug']}{sec}  [{MARK[r['grounding']]}]\n  {snip}…")
+        out.append(f"\n({sc:.2f}) {r['slug']}{sec}  [{MARK[r['grounding']]}]{warn}\n  {snip}…")
     return "\n".join(out)
 
 
@@ -141,6 +142,13 @@ def v_get(cfg, slug=""):
         head.append(f"anchors: {anchors}  ({r['anchors_ok']} re-resolve)")
     if r["origin_session"]:
         head.append(f"origin: {r['origin_session']}  (provenance — log likely pruned)")
+    asof = r["asof"] if "asof" in r.keys() else None
+    if asof:
+        cr = r["change_rate"] if "change_rate" in r.keys() else None
+        head.append(f"as-of: {asof[:10]}" + (f"  (change-rate: {cr})" if cr else ""))
+    stale = json.loads(r["stale"]) if ("stale" in r.keys() and r["stale"]) else []
+    if stale:
+        head.append(f"⚠ may be stale — cited source changed after this was written, re-verify: {stale}")
     return "\n".join(head) + "\n\n" + r["body"].strip()
 
 
