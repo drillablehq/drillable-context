@@ -67,6 +67,11 @@ def split_sections(body):
         out.append((m.group(2).strip(), body[m.start():end].strip()))
     return out
 
+# Bump on EVERY change to SCHEMA below. Stamped into the DB (PRAGMA user_version) at seed; the server
+# reseeds when a DB's stamp != this, so a schema-changing plugin update self-heals instead of erroring
+# against a stale-shape DB. (v1 = chunk table + as-of columns; pre-stamp DBs read as 0 → mismatch → reseed.)
+SCHEMA_VERSION = 1
+
 SCHEMA = """
 CREATE TABLE memory (
   slug TEXT PRIMARY KEY, type TEXT NOT NULL, serving TEXT NOT NULL, title TEXT NOT NULL,
@@ -195,6 +200,7 @@ def main():
         os.remove(db)
     con = sqlite3.connect(db)
     con.executescript(SCHEMA)
+    con.execute(f"PRAGMA user_version = {int(SCHEMA_VERSION)}")   # stamp the schema version for self-heal
 
     repo_full, repo_base = repo_index(oracle_repo)
     # as-of / drift: when each file last changed in git. facts_commits dates the FACT; oracle_commits
