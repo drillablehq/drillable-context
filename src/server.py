@@ -51,13 +51,27 @@ def facts_mtime(cfg):
     return newest
 
 
+def _db_schema_version(db):
+    try:
+        c = sqlite3.connect(db)
+        v = c.execute("PRAGMA user_version").fetchone()[0]
+        c.close()
+        return v
+    except Exception:
+        return None
+
+
 def con(cfg):
     db = cfg["_db"]
-    # (Re)seed when the DB is absent OR a fact changed since it was built — so the running server reflects
-    # edits, not a stale snapshot. seed.main() rebuilds in place (the .md stay the source of truth).
-    if not os.path.exists(db) or facts_mtime(cfg) > os.path.getmtime(db):
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        import seed
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import seed
+    # (Re)seed when: the DB is absent, a fact changed since it was built (freshness), OR the DB's stamped
+    # schema version != the code's — so a plugin update that changes SCHEMA self-heals on the next query
+    # instead of erroring against a stale-shape DB. seed.main() rebuilds in place (.md stay the truth).
+    needs = (not os.path.exists(db)
+             or facts_mtime(cfg) > os.path.getmtime(db)
+             or _db_schema_version(db) != seed.SCHEMA_VERSION)
+    if needs:
         with contextlib.redirect_stdout(sys.stderr):  # seed reads the SAME sys.argv the server got
             try:
                 seed.main()
