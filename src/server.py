@@ -72,38 +72,61 @@ def toks(s):
     return [t for t in re.findall(r"[a-z0-9]+", s.lower()) if t not in STOP and len(t) > 1]
 
 
-EMBED_FLOOR = 0.30  # cosine below this ≈ off-topic → abstain (text-embedding-3-small; tunable, cf. gateway nearest.ts)
+EMBED_FLOOR = float(os.environ.get("DRILLABLE_EMBED_FLOOR", "0.30"))  # cosine below ≈ off-topic → abstain (tunable)
+EMBED_BAND = float(os.environ.get("DRILLABLE_EMBED_BAND", "0.10"))    # also drop hits this far below the top —
+#                                                                       trims weak padding so a near-miss returns few, not a full page
 KEYWORD_FLOOR = 2   # keyword: pass on a title hit OR ≥ this body/overlap weight; a lone common-word body match (=1) abstains
+MAX_HITS = 8
+
+
+def _best_by_slug(scored):
+    """scored: iterable of (score, chunk_row) → the top-scoring SECTION per fact, ranked desc.
+
+    Retrieval ranks sections; results are still one-per-fact (the section is what gets shown +
+    drilled, but `get` returns the whole fact). So a multi-section doc can't crowd the page with
+    its own sections, and the snippet is the matching SECTION, not the file's opening line."""
+    best = {}
+    for s, r in scored:
+        if r["slug"] not in best or s > best[r["slug"]][0]:
+            best[r["slug"]] = (s, r)
+    return sorted(best.values(), key=lambda x: -x[0])
 
 
 def v_search(cfg, query=""):
     if not toks(query):
         return "empty query."
-    rows = con(cfg).execute("SELECT slug,title,body,grounding,vector FROM memory WHERE serving='queryable'").fetchall()
+    rows = con(cfg).execute(
+        "SELECT c.slug AS slug, c.heading AS heading, c.text AS text, c.vector AS vector, "
+        "m.title AS title, m.grounding AS grounding "
+        "FROM chunk c JOIN memory m ON m.slug = c.slug WHERE m.serving='queryable'").fetchall()
     qvec = None
     if rows and all(r["vector"] for r in rows) and embed.available():
         ev = embed.embed([query])
         qvec = ev[0] if ev else None
-    if qvec is not None:                       # embedding retrieval + cosine floor (keeps the honest abstain)
-        ranked = sorted(((embed.cosine(qvec, json.loads(r["vector"])), r) for r in rows), key=lambda x: -x[0])
-        scored = [(s, r) for s, r in ranked if s >= EMBED_FLOOR][:8]
+    if qvec is not None:                       # section-level embedding retrieval + cosine floor + top-band
+        ranked = _best_by_slug((embed.cosine(qvec, json.loads(r["vector"])), r) for r in rows)
+        ranked = [(s, r) for s, r in ranked if s >= EMBED_FLOOR]
+        if ranked:
+            top = ranked[0][0]
+            ranked = [(s, r) for s, r in ranked if s >= top - EMBED_BAND]
+        scored = ranked[:MAX_HITS]
     else:                                      # keyword fallback — abstains on no overlap AND on a lone weak match
         q = set(toks(query))
-        scored = []
+        kw = []
         for r in rows:
-            tt, bt = set(toks(r["title"])), toks(r["body"])
+            tt, bt = set(toks(r["title"])), toks(r["text"])
             title_hits = sum(t in q for t in tt)
             sc = 3 * title_hits + sum(min(bt.count(t), 3) for t in q)
             if title_hits or sc >= KEYWORD_FLOOR:   # floor: a single common-word body overlap (sc=1) abstains
-                scored.append((sc, r))
-        scored.sort(key=lambda x: -x[0])
-        scored = scored[:8]
+                kw.append((sc, r))
+        scored = _best_by_slug(kw)[:MAX_HITS]
     if not scored:
         return f'no record — "{query}" misses (an honest abstention, not a guess).'
     out = [f'search "{query}" → top {len(scored)}:']
     for sc, r in scored:
-        snip = re.sub(r"\s+", " ", r["body"])[:140]
-        out.append(f"\n({sc:.2f}) {r['slug']}  [{MARK[r['grounding']]}]\n  {snip}…")
+        sec = f" § {r['heading']}" if r["heading"] else ""
+        snip = re.sub(r"\s+", " ", r["text"])[:140]
+        out.append(f"\n({sc:.2f}) {r['slug']}{sec}  [{MARK[r['grounding']]}]\n  {snip}…")
     return "\n".join(out)
 
 

@@ -41,16 +41,41 @@ PATH_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]*\.(?:py|ts|tsx|js|sql|json|sh
 PR_RE = re.compile(r"#(\d{2,5})\b")
 LINK_RE = re.compile(r"\[\[([a-z0-9-]+)\]\]")
 HEAD_RE = re.compile(r"^#\s+(.+?)\s*$", re.M)
+SECTION_RE = re.compile(r"^(#{2,6})\s+(.+?)\s*$", re.M)
+
+
+def split_sections(body):
+    """[(heading|None, text)] — the intro (before the first ## ) then each ##-section, in order.
+
+    The retrieval UNIT. A fact with no sub-headings → one chunk = its whole body, so the
+    one-fact-per-file case is byte-unchanged; a big multi-section doc → one chunk per section, so
+    search can point at the SECTION, not the whole file."""
+    marks = list(SECTION_RE.finditer(body))
+    if not marks:
+        b = body.strip()
+        return [(None, b)] if b else []
+    out = []
+    intro = body[:marks[0].start()].strip()
+    if intro:
+        out.append((None, intro))
+    for i, m in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(body)
+        out.append((m.group(2).strip(), body[m.start():end].strip()))
+    return out
 
 SCHEMA = """
 CREATE TABLE memory (
   slug TEXT PRIMARY KEY, type TEXT NOT NULL, serving TEXT NOT NULL, title TEXT NOT NULL,
   body TEXT NOT NULL, source_file TEXT NOT NULL, grounding TEXT NOT NULL,
   anchors TEXT NOT NULL DEFAULT '[]', anchors_ok INTEGER NOT NULL DEFAULT 0,
-  origin_session TEXT, links TEXT NOT NULL DEFAULT '[]', vector TEXT
+  origin_session TEXT, links TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX idx_serving ON memory(serving);
 CREATE INDEX idx_grounding ON memory(grounding);
+CREATE TABLE chunk (
+  slug TEXT NOT NULL, ord INTEGER NOT NULL, heading TEXT, text TEXT NOT NULL, vector TEXT
+);
+CREATE INDEX idx_chunk_slug ON chunk(slug);
 """
 
 
@@ -153,7 +178,7 @@ def main():
 
     files = sorted(p for p in candidates if _keep(p))
     counts = {"standing": 0, "queryable": 0, "cited": 0, "provenance": 0, "judgment": 0, "ok": 0}
-    embed_rows = []
+    chunks = []   # (slug, ord, heading, text, title) — the retrieval units (one per ## section)
     seen_slugs = set()
 
     for path in files:
@@ -187,7 +212,8 @@ def main():
         else:
             grounding = "judgment"
 
-        embed_rows.append((slug, f"{title}\n{body}"))
+        for ordn, (sec_head, sec_text) in enumerate(split_sections(body)):
+            chunks.append((slug, ordn, sec_head, sec_text, title))
         counts[serving] += 1
         counts[grounding] += 1
         counts["ok"] += anchors_ok
@@ -197,18 +223,23 @@ def main():
                      grounding, json.dumps(anchors), anchors_ok, origin,
                      json.dumps(sorted(set(LINK_RE.findall(body))))))
     con.commit()
+    # Embed at the SECTION level — the title rides in each chunk's text so the chunk is self-locating.
+    def _etext(head_, text_, title_):
+        return f"{title_}\n{head_}\n{text_}" if head_ else f"{title_}\n{text_}"
     embedded = 0
-    if cfg.get("embed") and embed.available():
-        vecs = embed.embed([t for _, t in embed_rows])
-        if vecs:
-            for (s, _), vec in zip(embed_rows, vecs):
-                con.execute("UPDATE memory SET vector=? WHERE slug=?", (json.dumps(vec), s))
-            con.commit()
-            embedded = len(vecs)
+    vecs = embed.embed([_etext(h, t, ti) for _, _, h, t, ti in chunks]) \
+        if (cfg.get("embed") and embed.available()) else None
+    for i, (s, ordn, h, t, _ti) in enumerate(chunks):
+        vec = json.dumps(vecs[i]) if vecs else None
+        con.execute("INSERT INTO chunk(slug,ord,heading,text,vector) VALUES(?,?,?,?,?)",
+                    (s, ordn, h, t, vec))
+        if vec:
+            embedded += 1
+    con.commit()
     con.close()
-    print(f"seeded {db}  ·  {len(files)} facts from {facts_dir}")
+    print(f"seeded {db}  ·  {len(files)} facts · {len(chunks)} chunks from {facts_dir}")
     if embedded:
-        print(f"  retriever: EMBEDDING — {embedded} vectors (text-embedding-3-small)")
+        print(f"  retriever: EMBEDDING — {embedded} chunk vectors (text-embedding-3-small)")
     elif cfg.get("embed"):
         print("  retriever: keyword (embed:true but no OPENAI_API_KEY found — fell back)")
     else:

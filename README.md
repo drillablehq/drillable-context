@@ -157,6 +157,13 @@ treat it as a guarantee that no secret can ever reach the index.
 - **Retrieval scales.** Keyword is fine for a small corpus or when you query in the docs' own words; for
   a real repo, set `"embed": true` — semantic retrieval gets ~94% recall@3 vs ~67% for keyword (and
   100% on natural-language questions). An off-topic query still returns "no record" (a cosine floor).
+- **Retrieval is section-level.** Search ranks each `##` section as its own unit and returns the
+  matching section (with its heading) — so a hit points at the relevant *passage*, not just the file,
+  and one big multi-section doc can't crowd out the rest. `get` still returns the whole fact. A small
+  one-topic file with no sub-headings is a single section, so the one-fact-per-file case is unchanged.
+  An off-topic query abstains (`DRILLABLE_EMBED_FLOOR`, default 0.30); weak tail hits far below the top
+  match are dropped so a near-miss returns a few focused sections, not a full page (`DRILLABLE_EMBED_BAND`,
+  default 0.10).
 - **MCP**: the server speaks stdio JSON-RPC and negotiates the client's protocol version (verified
   spec-correct against the MCP reference as of revision 2025-11-25). The 2026-07-28 MCP release
   candidate removes the `initialize` handshake; this server will need a small update then, and keeps
