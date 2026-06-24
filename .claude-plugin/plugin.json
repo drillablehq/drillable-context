@@ -25,7 +25,7 @@
     "semantic_retrieval": {
       "type": "boolean",
       "title": "Semantic retrieval (sends facts to OpenAI to embed)",
-      "description": "Embed your facts for semantic search — recommended for a large corpus (recall@3 ~94% vs ~67% keyword). Requires OPENAI_API_KEY in your environment and sends your facts' text to OpenAI. Off = fully local keyword retrieval.",
+      "description": "Embed your facts for semantic search — recommended for a large corpus (recall@3 ~94% vs ~67% keyword). Requires OPENAI_API_KEY and sends your facts' text to OpenAI. This also turns on doc2query: an LLM predicts the everyday-worded questions each note answers and adds them to the search index only (never to what's shown), so plain-language queries still find the right note (measured: +16–25 pts recall, no precision loss). It uses the same data and vendor you've already opted into — a few cents one-time, cached. Off = fully local keyword retrieval, no OpenAI.",
       "required": false
     }
   }
