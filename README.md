@@ -1,5 +1,8 @@
 # drillable-context
 
+> **Renamed (2026-06-24):** plugin name is now **`context`** (was `drillable-context`), installed from
+> `drillablehq/marketplace` (`/plugin install context@drillable`). Old installs keep working; reinstall to update.
+
 *The engine that grounds a coding agent in **your own project's facts**.*
 
 Your coding agent forgets. It contradicts a decision you made last week, invents a convention you
@@ -46,8 +49,8 @@ edit or add a fact — the next query reflects the change (no restart, no manual
 **One-click, if your client has the plugin UI** (`/plugin`) or the `claude plugin` CLI:
 
 ```
-/plugin marketplace add drillablehq/drillable-context   # or a local path
-/plugin install drillable-context@drillable
+/plugin marketplace add drillablehq/marketplace   # or a local path
+/plugin install context@drillable
 ```
 
 That same `drillable` marketplace also carries **use-drillable** (makes your agent reach for cited

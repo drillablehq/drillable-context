@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
-  "name": "drillable-context",
+  "name": "context",
   "displayName": "Drillable Context",
   "version": "0.2.0",
   "description": "Grounds your coding agent in YOUR project's facts \u2014 your docs, decisions, and conventions \u2014 so it drills them instead of guessing, and says \"no record\" instead of bluffing. A local MCP server over a folder of markdown you point it at.",
@@ -9,7 +9,7 @@
     "url": "https://drillable.com"
   },
   "homepage": "https://drillable.com",
-  "repository": "https://github.com/drillablehq/drillable-context",
+  "repository": "https://github.com/drillablehq/context",
   "keywords": [
     "grounding",
     "context",
