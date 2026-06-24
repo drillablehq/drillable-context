@@ -27,6 +27,12 @@
       "title": "Semantic retrieval (sends facts to OpenAI to embed)",
       "description": "Embed your facts for semantic search — recommended for a large corpus (recall@3 ~94% vs ~67% keyword). Requires OPENAI_API_KEY and sends your facts' text to OpenAI. This also turns on doc2query: an LLM predicts the everyday-worded questions each note answers and adds them to the search index only (never to what's shown), so plain-language queries still find the right note (measured: +16–25 pts recall, no precision loss). It uses the same data and vendor you've already opted into — a few cents one-time, cached. Off = fully local keyword retrieval, no OpenAI.",
       "required": false
+    },
+    "rerank": {
+      "type": "boolean",
+      "title": "Rerank low-confidence searches (extra accuracy, per-search OpenAI cost)",
+      "description": "When a search looks uncertain — usually a plain-worded question whose terms your notes don't use — have an LLM re-order the top candidates by relevance before answering (measured: everyday-question recall@5 ~78%→93%). Needs Semantic retrieval ON. Unlike that, this costs a small OpenAI call PER affected search (fires on roughly a third of searches — the unsure ones; confident searches skip it). Off = no per-search cost.",
+      "required": false
     }
   }
 }

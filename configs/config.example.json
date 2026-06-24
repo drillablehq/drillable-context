@@ -6,5 +6,6 @@
   "type_field": "type",
   "recursive": true,
   "respect_gitignore": true,
-  "embed": false
+  "embed": false,
+  "rerank": false
 }

@@ -9,7 +9,8 @@
         "--oracle-repo", "${user_config.oracle_repo}"
       ],
       "env": {
-        "DRILLABLE_EMBED": "${user_config.semantic_retrieval}"
+        "DRILLABLE_EMBED": "${user_config.semantic_retrieval}",
+        "DRILLABLE_RERANK": "${user_config.rerank}"
       }
     }
   }

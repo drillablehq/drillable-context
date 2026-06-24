@@ -16,6 +16,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import embed  # noqa: E402 — optional embedding retriever; keyword fallback when no key
@@ -92,6 +93,13 @@ EMBED_BAND = float(os.environ.get("DRILLABLE_EMBED_BAND", "0.10"))    # also dro
 #                                                                       trims weak padding so a near-miss returns few, not a full page
 KEYWORD_FLOOR = 2   # keyword: pass on a title hit OR ≥ this body/overlap weight; a lone common-word body match (=1) abstains
 MAX_HITS = 8
+# Query-conditional rerank (opt-in): when the top embedding cosine is BELOW this, the query is
+# low-confidence (typically a plain-worded/vocab-foreign question — measured ~0.51 vs ~0.68 for
+# term-matching queries), so an LLM reorders the top-K candidates. Fires on ~the third of queries that
+# need it (lifts everyday-question recall@5 ~78→93% on the benchmark) and skips the rest, so the
+# serve-time LLM call is paid only where retrieval is unsure.
+RERANK_FLOOR = float(os.environ.get("DRILLABLE_RERANK_FLOOR", "0.60"))
+RERANK_K = int(os.environ.get("DRILLABLE_RERANK_K", "20"))
 
 
 def _best_by_slug(scored):
@@ -105,6 +113,39 @@ def _best_by_slug(scored):
         if r["slug"] not in best or s > best[r["slug"]][0]:
             best[r["slug"]] = (s, r)
     return sorted(best.values(), key=lambda x: -x[0])
+
+
+def _rerank(query, cands):
+    """An LLM reorders the top-K candidate sections by relevance to the query (cross-encoder style).
+    cands: list of (cosine, row) → same items, reordered. Degrades to the input order on any error or
+    missing key, so it is never worse than no rerank. Caller gates this on a low-confidence query."""
+    key = os.environ.get("OPENAI_API_KEY")
+    if not key or not cands:
+        return cands
+    listing = "\n".join(
+        f"{i+1}. {r['title']}" + (f" § {r['heading']}" if r["heading"] else "")
+        + " — " + re.sub(r"\s+", " ", r["text"])[:240]
+        for i, (_s, r) in enumerate(cands))
+    body = json.dumps({"model": os.environ.get("DRILLABLE_RERANK_MODEL", "gpt-4o-mini"), "temperature": 0,
+        "messages": [
+            {"role": "system", "content": "Rank the numbered documents by how well each answers the "
+             "question, best first. Reply with ONLY the numbers, comma-separated, best first."},
+            {"role": "user", "content": f"Question: {query}\n\nDocuments:\n{listing}"}]}).encode()
+    try:
+        req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=body,
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+        out = json.load(urllib.request.urlopen(req, timeout=30))["choices"][0]["message"]["content"]
+    except Exception:
+        return cands
+    seen, order = set(), []
+    for tok in re.findall(r"\d+", out):
+        i = int(tok) - 1
+        if 0 <= i < len(cands) and i not in seen:
+            seen.add(i); order.append(cands[i])
+    for i, c in enumerate(cands):                    # append any the model dropped, in cosine order
+        if i not in seen:
+            order.append(c)
+    return order
 
 
 def _retriever(cfg):
@@ -134,13 +175,18 @@ def v_search(cfg, query=""):
     if rows and all(r["vector"] for r in rows) and embed.available():
         ev = embed.embed([query])
         qvec = ev[0] if ev else None
+    reranked = False
     if qvec is not None:                       # section-level embedding retrieval + cosine floor + top-band
         ranked = _best_by_slug((embed.cosine(qvec, json.loads(r["vector"])), r) for r in rows)
         ranked = [(s, r) for s, r in ranked if s >= EMBED_FLOOR]
-        if ranked:
-            top = ranked[0][0]
-            ranked = [(s, r) for s, r in ranked if s >= top - EMBED_BAND]
-        scored = ranked[:MAX_HITS]
+        if cfg.get("rerank") and ranked and ranked[0][0] < RERANK_FLOOR and embed.available():
+            scored = _rerank(query, ranked[:RERANK_K])[:MAX_HITS]   # low-confidence query → LLM reorder
+            reranked = True
+        else:                                  # confident query → cosine top-band (no LLM call)
+            if ranked:
+                top = ranked[0][0]
+                ranked = [(s, r) for s, r in ranked if s >= top - EMBED_BAND]
+            scored = ranked[:MAX_HITS]
     else:                                      # keyword fallback — abstains on no overlap AND on a lone weak match
         q = set(toks(query))
         kw = []
@@ -161,6 +207,8 @@ def v_search(cfg, query=""):
         out.append(f"\n({sc:.2f}) {r['slug']}{sec}  [{MARK[r['grounding']]}]{warn}\n  {snip}…")
     if qvec is None and cfg.get("embed"):          # they asked for semantic but got keyword — tell them once
         out.append(f"\n— retriever: {_retriever(cfg)[1]}")
+    elif reranked:                                 # surface that a low-confidence query was LLM-reranked
+        out.append("\n— reranked (low-confidence query); order is by relevance, not cosine")
     return "\n".join(out)
 
 

@@ -33,6 +33,9 @@ def resolve(argv):
     # doc2query BUNDLES with embed (same data, same vendor, ~pennies; lifts plain-worded recall).
     # --no-doc2query (or DRILLABLE_DOC2QUERY=false, or "doc2query": false in a config) opts out.
     ap.add_argument("--no-doc2query", dest="no_doc2query", action="store_true")
+    # rerank is OPT-IN (default off): a serve-time LLM call per low-confidence query. Unlike doc2query
+    # (index-time, free at serve), it costs per query — so it is NOT bundled.
+    ap.add_argument("--rerank", action="store_true")
     ap.add_argument("--db")
     a, _ = ap.parse_known_args(argv)
 
@@ -47,6 +50,7 @@ def resolve(argv):
         cfg["_db"] = a.db or os.path.join(cfg["_dir"], f"{cfg['name']}.db")
         # doc2query bundles with embed: on whenever embed is, unless the config sets it false explicitly.
         cfg["doc2query"] = bool(cfg.get("embed")) and cfg.get("doc2query", True)
+        cfg["rerank"] = bool(cfg.get("rerank"))   # opt-in; serve-time LLM cost, so never implied
         return cfg
 
     facts_dir = a.facts_dir or os.environ.get("DRILLABLE_FACTS_DIR")
@@ -65,6 +69,7 @@ def resolve(argv):
         # (--no-doc2query or DRILLABLE_DOC2QUERY in {0,false,off}).
         d2q_off = a.no_doc2query or os.environ.get("DRILLABLE_DOC2QUERY", "").lower() in ("0", "false", "off")
         cfg["doc2query"] = cfg["embed"] and not d2q_off
+        cfg["rerank"] = a.rerank or os.environ.get("DRILLABLE_RERANK", "").lower() in ("1", "true")
         cfg["_db"] = a.db or os.path.join(HOME, f"{a.name}.db")
         return cfg
 
