@@ -106,6 +106,22 @@ def _best_by_slug(scored):
     return sorted(best.values(), key=lambda x: -x[0])
 
 
+def _retriever(cfg):
+    """(mode, label) — the retriever ACTUALLY live, mirroring v_search's decision (a vector for every
+    chunk AND a key available). Lets stats/search state the truth instead of silently running keyword
+    when the user asked for semantic."""
+    c = con(cfg)
+    total = c.execute("SELECT COUNT(*) FROM chunk").fetchone()[0]
+    vecs = c.execute("SELECT COUNT(*) FROM chunk WHERE vector IS NOT NULL").fetchone()[0]
+    if total and vecs == total and embed.available():
+        return "semantic", f"semantic ({embed.MODEL})"
+    if cfg.get("embed"):                            # asked for semantic, but it isn't on — say why
+        why = ("no OPENAI_API_KEY in this server's environment" if not embed.available()
+               else "facts aren't embedded yet — reseed")
+        return "keyword", f"keyword — semantic requested but INACTIVE ({why}); ~94% vs ~67% recall@3 once on"
+    return "keyword", 'keyword (set "embed": true + OPENAI_API_KEY for semantic — ~94% vs ~67% recall@3)'
+
+
 def v_search(cfg, query=""):
     if not toks(query):
         return "empty query."
@@ -142,6 +158,8 @@ def v_search(cfg, query=""):
         warn = " ⚠ may be stale" if (r["stale"] and r["stale"] != "[]") else ""
         snip = re.sub(r"\s+", " ", r["text"])[:140]
         out.append(f"\n({sc:.2f}) {r['slug']}{sec}  [{MARK[r['grounding']]}]{warn}\n  {snip}…")
+    if qvec is None and cfg.get("embed"):          # they asked for semantic but got keyword — tell them once
+        out.append(f"\n— retriever: {_retriever(cfg)[1]}")
     return "\n".join(out)
 
 
@@ -176,7 +194,7 @@ def v_stats(cfg):
     tot = c.execute("SELECT COUNT(*) FROM memory").fetchone()[0]
     sv = ", ".join(f"{r[0]} {r[1]}" for r in c.execute("SELECT serving,COUNT(*) FROM memory GROUP BY serving"))
     gr = ", ".join(f"{r[0]} {r[1]}" for r in c.execute("SELECT grounding,COUNT(*) FROM memory GROUP BY grounding"))
-    return f"{cfg['name']} — {tot} facts\n  serving: {sv}\n  grounding: {gr}"
+    return f"{cfg['name']} — {tot} facts\n  serving: {sv}\n  grounding: {gr}\n  retriever: {_retriever(cfg)[1]}"
 
 
 def build_tools(cfg):
