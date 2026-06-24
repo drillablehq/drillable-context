@@ -30,6 +30,9 @@ def resolve(argv):
     # always returns nothing. Pass --standing-types "" to opt out, or a CSV to set your own types.
     ap.add_argument("--standing-types", default="preference")
     ap.add_argument("--embed", action="store_true")
+    # doc2query BUNDLES with embed (same data, same vendor, ~pennies; lifts plain-worded recall).
+    # --no-doc2query (or DRILLABLE_DOC2QUERY=false, or "doc2query": false in a config) opts out.
+    ap.add_argument("--no-doc2query", dest="no_doc2query", action="store_true")
     ap.add_argument("--db")
     a, _ = ap.parse_known_args(argv)
 
@@ -42,6 +45,8 @@ def resolve(argv):
         cfg["_dir"] = os.path.dirname(p)
         cfg["facts_dir"] = os.path.abspath(os.path.join(cfg["_dir"], cfg["facts_dir"]))
         cfg["_db"] = a.db or os.path.join(cfg["_dir"], f"{cfg['name']}.db")
+        # doc2query bundles with embed: on whenever embed is, unless the config sets it false explicitly.
+        cfg["doc2query"] = bool(cfg.get("embed")) and cfg.get("doc2query", True)
         return cfg
 
     facts_dir = a.facts_dir or os.environ.get("DRILLABLE_FACTS_DIR")
@@ -56,6 +61,10 @@ def resolve(argv):
             "embed": a.embed or os.environ.get("DRILLABLE_EMBED") in ("1", "true"),
             "_dir": HOME,
         }
+        # doc2query bundles with embed: on whenever embed is, unless explicitly opted out
+        # (--no-doc2query or DRILLABLE_DOC2QUERY in {0,false,off}).
+        d2q_off = a.no_doc2query or os.environ.get("DRILLABLE_DOC2QUERY", "").lower() in ("0", "false", "off")
+        cfg["doc2query"] = cfg["embed"] and not d2q_off
         cfg["_db"] = a.db or os.path.join(HOME, f"{a.name}.db")
         return cfg
 

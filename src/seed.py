@@ -19,12 +19,14 @@ config.json:
     "track_drift":    false,                    # OPTIONAL: flag a cited fact whose source changed after
                                                 #   it (re-verify). Off by default — noisy in a co-evolving
                                                 #   monorepo; signal when oracle_repo is a SEPARATE code repo
-    "doc2query":      false                     # OPTIONAL: index-side expansion (docTTTTTquery). Append
-                                                #   LLM-predicted lay-questions to each chunk's EMBEDDING
-                                                #   text only (never the served text) — lifts vocab-foreign
-                                                #   recall (a lay-worded query the chunk's own vocabulary
-                                                #   doesn't match). One-time LLM cost at seed, cached by
-                                                #   content hash; the query path is unchanged. Needs embed.
+    "doc2query":      <follows embed>          # index-side expansion (docTTTTTquery): append LLM-predicted
+                                                #   lay-questions to each chunk's EMBEDDING text only (never
+                                                #   the served text) — lifts recall on a lay-worded query the
+                                                #   chunk's own vocabulary doesn't match. BUNDLES WITH EMBED:
+                                                #   on whenever "embed" is, since it's the same data to the
+                                                #   same vendor for ~pennies. Set false here (or --no-doc2query
+                                                #   / DRILLABLE_DOC2QUERY=false) to opt out. Cached by content
+                                                #   hash; query path unchanged.
   }
 
 THE SPLIT: standing (must fire every turn — preferences/standing instructions) vs queryable (the
@@ -34,6 +36,7 @@ graded 'verified'). It stops your agent bluffing your facts and abstains when it
 it is NOT a truth oracle.
 """
 import argparse
+import concurrent.futures
 import glob
 import hashlib
 import json
@@ -75,7 +78,7 @@ def split_sections(body):
         out.append((m.group(2).strip(), body[m.start():end].strip()))
     return out
 
-def doc2query_aug(etexts, cache_path, model="gpt-4o-mini"):
+def doc2query_aug(etexts, cache_path, model="gpt-4o-mini", workers=12):
     """doc2query / docTTTTTquery (Nogueira & Lin 2019): for each chunk, predict the lay QUESTIONS it
     answers and append them to the EMBEDDING text only — never to the served text. They are a retrieval
     KEY, not content (so honesty is preserved: nothing synthetic is ever shown or cited). This lifts
@@ -84,7 +87,9 @@ def doc2query_aug(etexts, cache_path, model="gpt-4o-mini"):
     `context-search-vocab-foreign-fix-stays-per-finding-alias`). Cached by content hash, so a re-seed
     regenerates ONLY changed chunks. Offline/one-time; the query path is unchanged.
 
-    Returns (augmented_texts, n_generated)."""
+    Generation is PARALLEL (the calls are independent I/O), so a first seed stays seconds, not minutes.
+    A per-chunk failure degrades to no augmentation for that chunk (left uncached → retried next seed),
+    so a transient error never tanks the whole seed. Returns (augmented_texts, n_generated)."""
     key = os.environ.get("OPENAI_API_KEY")
     cache = {}
     if os.path.exists(cache_path):
@@ -95,20 +100,35 @@ def doc2query_aug(etexts, cache_path, model="gpt-4o-mini"):
     SYS = ("You are given a section of a software project's notes. Write 3 short, DISTINCT questions a "
            "user might ask that this section answers — phrased in plain everyday vocabulary, NOT the "
            "section's own jargon (use lay synonyms for technical terms). One per line, no numbering.")
-    out, made = [], 0
+
+    def _gen(et):
+        data = json.dumps({"model": model, "temperature": 0.4, "messages": [
+            {"role": "system", "content": SYS}, {"role": "user", "content": et[:4000]}]}).encode()
+        req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=data,
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+        return json.load(urllib.request.urlopen(req, timeout=60))["choices"][0]["message"]["content"].strip()
+
+    # unique uncached chunks only (identical sections share a hash → generate once), run concurrently
+    todo = {}
     for et in etexts:
         h = hashlib.sha256(et.encode()).hexdigest()
         if h not in cache:
-            data = json.dumps({"model": model, "temperature": 0.4, "messages": [
-                {"role": "system", "content": SYS}, {"role": "user", "content": et[:4000]}]}).encode()
-            req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=data,
-                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
-            cache[h] = json.load(urllib.request.urlopen(req, timeout=60))["choices"][0]["message"]["content"].strip()
-            made += 1
-            if made % 25 == 0:
-                json.dump(cache, open(cache_path, "w"))
-        out.append(et + "\n\n" + cache[h])
-    json.dump(cache, open(cache_path, "w"))
+            todo.setdefault(h, et)
+    made = 0
+    if todo:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+            futs = {ex.submit(_gen, et): h for h, et in todo.items()}
+            for fut in concurrent.futures.as_completed(futs):
+                try:
+                    cache[futs[fut]] = fut.result()
+                    made += 1
+                except Exception:
+                    pass   # leave uncached → retried next seed; this chunk just isn't augmented this run
+        json.dump(cache, open(cache_path, "w"))
+    out = []
+    for et in etexts:
+        h = hashlib.sha256(et.encode()).hexdigest()
+        out.append(et + ("\n\n" + cache[h] if h in cache else ""))
     return out, made
 
 
