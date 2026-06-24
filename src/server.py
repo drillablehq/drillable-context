@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -189,12 +190,43 @@ def v_standing(cfg):
     return f"STANDING — {len(rows)} always-loaded:\n" + "\n".join(f"  [{r['type'] or '—'}] {r['title']}" for r in rows)
 
 
+def _facts_behind(facts_dir):
+    """(n_behind, upstream) if the facts checkout is behind its tracked remote, else None.
+
+    The per-CORPUS staleness signal (the per-fact as-of can't see it): if the indexing checkout is behind
+    its remote, the .md are old *content* the corpus would serve as current. Best-effort + offline-safe —
+    compares HEAD to the LOCAL remote-tracking ref (no fetch); skips silently when facts_dir isn't a git
+    repo or has no upstream, exactly like embeddings degrade. Surfaces only; never pulls (a pull can
+    clobber uncommitted work)."""
+    try:
+        up = subprocess.run(["git", "-C", facts_dir, "rev-parse", "--abbrev-ref",
+                             "--symbolic-full-name", "@{upstream}"],
+                            capture_output=True, text=True, timeout=5)
+        if up.returncode != 0 or not up.stdout.strip():
+            return None
+        upstream = up.stdout.strip()
+        n = subprocess.run(["git", "-C", facts_dir, "rev-list", "--count", f"HEAD..{upstream}"],
+                           capture_output=True, text=True, timeout=5)
+        if n.returncode != 0:
+            return None
+        cnt = int(n.stdout.strip() or "0")
+        return (cnt, upstream) if cnt > 0 else None
+    except Exception:
+        return None
+
+
 def v_stats(cfg):
     c = con(cfg)
     tot = c.execute("SELECT COUNT(*) FROM memory").fetchone()[0]
     sv = ", ".join(f"{r[0]} {r[1]}" for r in c.execute("SELECT serving,COUNT(*) FROM memory GROUP BY serving"))
     gr = ", ".join(f"{r[0]} {r[1]}" for r in c.execute("SELECT grounding,COUNT(*) FROM memory GROUP BY grounding"))
-    return f"{cfg['name']} — {tot} facts\n  serving: {sv}\n  grounding: {gr}\n  retriever: {_retriever(cfg)[1]}"
+    out = f"{cfg['name']} — {tot} facts\n  serving: {sv}\n  grounding: {gr}\n  retriever: {_retriever(cfg)[1]}"
+    behind = _facts_behind(cfg["facts_dir"])
+    if behind:
+        n, up = behind
+        out += (f"\n  ⚠ facts checkout is {n} commit(s) behind {up} — may be serving stale facts; "
+                f"pull to refresh (not done automatically — a pull can clobber local work)")
+    return out
 
 
 def build_tools(cfg):
