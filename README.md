@@ -127,6 +127,22 @@ It's real signal when your facts are a **separate, slower-moving `docs/`** point
 `oracle_repo`. An optional `change_rate:` frontmatter field (e.g. `fast` / `slow`) is surfaced alongside
 the date as an author hint about how quickly that fact decays.
 
+**Pin the source — don't index a checkout you develop in.** `facts_dir` (and `oracle_repo`) silently
+track whatever branch their folder is on. Point them at a **dev checkout you actively work in** and the
+index quietly serves whatever branch you happened to leave it on — a freshly-merged fact is invisible,
+and *nothing errors*. So point them at an **immutable / pinned source**: a release tag, `origin/main`,
+or a **dedicated detached worktree** kept on the reviewed record:
+
+```
+git -C /path/to/repo worktree add --detach ~/sources/myproject origin/main
+```
+
+Set `facts_dir`/`oracle_repo` to `~/sources/myproject`, then re-pin + reseed after each merge. As a
+safety net, `stats` warns **"⚠ facts checkout is N commit(s) behind `<upstream>` — may be serving stale
+facts; pull to refresh"** when the indexed checkout has fallen behind its remote (it *surfaces*, never
+auto-pulls — a pull can clobber local work). A ready-made refresh script (fetch → re-pin to `origin/main`
+→ reseed) is in [`examples/refresh.sh`](examples/refresh.sh).
+
 ## Frontmatter conventions
 
 Facts are just markdown. An **optional** YAML frontmatter block tells the engine how to file each one —
