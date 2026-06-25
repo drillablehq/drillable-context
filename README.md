@@ -1,7 +1,7 @@
 # drillable-context
 
-> **Renamed (2026-06-24):** plugin name is now **`context`** (was `drillable-context`), installed from
-> `drillablehq/marketplace` (`/plugin install context@drillable`). Old installs keep working; reinstall to update.
+> **Note:** added via `claude mcp add` / `npx drillable-context` (see **Install** below) — *not* a
+> marketplace plugin. The npm package is `drillable-context`; the MCP tool surface it serves is `context`.
 
 *The engine that grounds a coding agent in **your own project's facts**.*
 
@@ -46,21 +46,18 @@ Add `-s user` for all projects; `-e DRILLABLE_EMBED=true` for semantic retrieval
 `context_stats`; the index builds itself on the first call, and the running server rebuilds it when you
 edit or add a fact — the next query reflects the change (no restart, no manual reseed).
 
-**One-click, if your client has the plugin UI** (`/plugin`) or the `claude plugin` CLI:
+**Companion — ground *reference* facts too.** For cited reference domains (the MCP spec, units,
+networking, and ~100 more), the **drillable** plugin makes your agent reach for them automatically:
 
 ```
-/plugin marketplace add drillablehq/marketplace   # or a local path
-/plugin install context@drillable
+/plugin marketplace add drillablehq/marketplace
+/plugin install drillable@dev
 ```
 
-That same `drillable` marketplace also carries **use-drillable** (makes your agent reach for cited
-*reference* facts — the MCP spec, units, networking, …) — add it too with
-`/plugin install use-drillable@drillable`. It's the same marketplace whichever repo you add it from.
 All the developer tools are at [drillable.com/dev](https://drillable.com/dev).
 
-It prompts for your facts directory at enable (the `userConfig`) — nothing to type. Ships **disabled**:
-it reads your files (and, if you opt into semantic retrieval, sends their text to OpenAI to embed), so
-enabling it is your call.
+**Enabling it is your call.** It reads your files — and, if you opt into semantic retrieval, sends
+their text to OpenAI to embed — so connecting it is deliberately your decision.
 
 ## How it works (under the hood)
 
