@@ -51,7 +51,7 @@ networking, and ~100 more), the **drillable** plugin makes your agent reach for 
 
 ```
 /plugin marketplace add drillablehq/marketplace
-/plugin install drillable@dev
+/plugin install drillable@drillable
 ```
 
 All the developer tools are at [drillable.com/dev](https://drillable.com/dev).
