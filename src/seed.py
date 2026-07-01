@@ -343,10 +343,12 @@ def main():
 
         if mtype in standing_types:
             grounding = "judgment"          # a standing instruction = a preference, no external oracle
+        elif origin:
+            grounding = "provenance"        # a session-origin fact is a DATED RECORD (its transcript), not a
+                                            # citation of the files it merely mentions — provenance beats the
+                                            # incidental anchors (the honest label for the sessions adapter)
         elif anchors:
             grounding = "cited"
-        elif origin:
-            grounding = "provenance"
         else:
             grounding = "judgment"
 
