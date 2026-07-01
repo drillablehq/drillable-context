@@ -28,9 +28,9 @@
   "homepage": "https://drillable.com",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/drillablehq/drillable-context.git"
+    "url": "git+https://github.com/drillablehq/context.git"
   },
   "bugs": {
-    "url": "https://github.com/drillablehq/drillable-context/issues"
+    "url": "https://github.com/drillablehq/context/issues"
   }
 }
