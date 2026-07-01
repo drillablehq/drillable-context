@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+Drill your own agent's session history — the first **source adapter** — plus project-scoped retrieval so a machine-wide install never crosses projects.
+
+- **`sessions.py` adapter** — converts Claude Code session transcripts (`~/.claude/projects/**/*.jsonl`) into the engine's markdown: one file per session, chunked by turn, grounded as dated **provenance** (a cited record of what was said, never "verified"). So "how did we handle X", "what did the agent struggle with", "when did I last touch Y" become retrievable, grounded to the exact turn. Adapters convert any non-markdown corpus into the same retrieval stack with no engine change — session history is just the first.
+- **Project-scoped retrieval** — `search` takes `project=`: a query is scoped to one project by default (a user-level install never contaminates one project's drills with another's), `project="all"` searches every project with each hit labelled, and an explicit no-match abstains honestly. Non-session corpora (no `project` frontmatter) are unaffected. Schema v2, self-heals on the next query.
+- **Maintenance** — CI now publishes via npm trusted publishing (OIDC), so there is no token to expire or rotate; `repository`/`bugs` metadata points at the renamed `drillablehq/context`.
+
 ## 0.3.0
 
 The broad view — `enumerate`, the "what does this corpus hold" verb. Search finds a needle; enumerate shows the haystack: the complete set by category, with an honest completeness bit.

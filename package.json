@@ -1,6 +1,6 @@
 {
   "name": "drillable-context",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Grounds your coding agent in YOUR project's facts \u2014 your docs, decisions, and conventions \u2014 so it drills them instead of guessing, and says \"no record\" instead of bluffing. A local, stdlib-only MCP server over a folder of markdown you point it at.",
   "bin": {
     "drillable-context": "bin/drillable-context.js"
