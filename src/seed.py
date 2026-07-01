@@ -140,7 +140,7 @@ def doc2query_aug(etexts, cache_path, model="gpt-4o-mini", workers=12):
 # Bump on EVERY change to SCHEMA below. Stamped into the DB (PRAGMA user_version) at seed; the server
 # reseeds when a DB's stamp != this, so a schema-changing plugin update self-heals instead of erroring
 # against a stale-shape DB. (v1 = chunk table + as-of columns; pre-stamp DBs read as 0 → mismatch → reseed.)
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2   # v2: memory.project (from frontmatter) — enables project-scoped retrieval (sessions)
 
 SCHEMA = """
 CREATE TABLE memory (
@@ -148,7 +148,7 @@ CREATE TABLE memory (
   body TEXT NOT NULL, source_file TEXT NOT NULL, grounding TEXT NOT NULL,
   anchors TEXT NOT NULL DEFAULT '[]', anchors_ok INTEGER NOT NULL DEFAULT 0,
   origin_session TEXT, links TEXT NOT NULL DEFAULT '[]',
-  asof TEXT, stale TEXT NOT NULL DEFAULT '[]', change_rate TEXT
+  asof TEXT, stale TEXT NOT NULL DEFAULT '[]', change_rate TEXT, project TEXT
 );
 CREATE INDEX idx_serving ON memory(serving);
 CREATE INDEX idx_grounding ON memory(grounding);
@@ -343,10 +343,12 @@ def main():
 
         if mtype in standing_types:
             grounding = "judgment"          # a standing instruction = a preference, no external oracle
+        elif origin:
+            grounding = "provenance"        # a session-origin fact is a DATED RECORD (its transcript), not a
+                                            # citation of the files it merely mentions — provenance beats the
+                                            # incidental anchors (the honest label for the sessions adapter)
         elif anchors:
             grounding = "cited"
-        elif origin:
-            grounding = "provenance"
         else:
             grounding = "judgment"
 
@@ -373,11 +375,12 @@ def main():
         counts["ok"] += anchors_ok
         counts["stale"] += 1 if stale else 0
         con.execute("INSERT INTO memory(slug,type,serving,title,body,source_file,grounding,anchors,"
-                    "anchors_ok,origin_session,links,asof,stale,change_rate) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "anchors_ok,origin_session,links,asof,stale,change_rate,project) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (slug, mtype or "", serving, title, body, rel,
                      grounding, json.dumps(anchors), anchors_ok, origin,
-                     json.dumps(sorted(set(LINK_RE.findall(body)))), asof, json.dumps(stale), change_rate))
+                     json.dumps(sorted(set(LINK_RE.findall(body)))), asof, json.dumps(stale), change_rate,
+                     (fm_field("project", fm) or None)))
     con.commit()
     # Embed at the SECTION level — the title rides in each chunk's text so the chunk is self-locating.
     def _etext(head_, text_, title_):
