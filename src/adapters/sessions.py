@@ -109,52 +109,73 @@ def session_md(path, project, max_turns=60):
     return "\n".join(lines)
 
 
-def main():
-    ap = argparse.ArgumentParser(description="convert Claude Code transcripts → drillable-context markdown")
-    ap.add_argument("--out", required=True, help="output facts_dir (per-project subdirs of <sessionId>.md)")
-    ap.add_argument("--projects-dir", default=PROJECTS, help="~/.claude/projects (default)")
-    ap.add_argument("--project", help="only slugs containing this substring")
-    ap.add_argument("--since", help="only sessions dated >= YYYY-MM-DD (by file mtime)")
-    ap.add_argument("--limit", type=int, help="cap the number of sessions (a first-cut slice)")
-    a = ap.parse_args()
+def _project_of(slug):
+    """The base project name of a ~/.claude/projects slug (a worktree slug shares the base project)."""
+    return re.sub(r"^-Users-[^-]+-(Code|code)-", "", slug).split("--claude-worktrees-")[0] or slug
 
-    src = os.path.expanduser(a.projects_dir)
+
+def convert(out, projects_dir=PROJECTS, project=None, since=None, limit=None, rebuild=False):
+    """Convert transcripts → per-project `<sessionId>.md` under `out`. INCREMENTAL by default: a session
+    whose `.md` is already at/after its transcript's mtime is skipped, so re-runs (and the server's
+    throttled refresh) touch only NEW/changed sessions. Returns {written, skipped, fresh} — `fresh` is how
+    many `.md` were (re)written this call (0 → nothing new to reseed). Pure default paths (no required args)."""
+    src = os.path.expanduser(projects_dir)
+    out = os.path.expanduser(out)
     if not os.path.isdir(src):
-        sys.exit(f"no {src}")
+        return {"written": 0, "skipped": 0, "fresh": 0, "error": f"no {src}"}
     jobs = []
     for slug in sorted(os.listdir(src)):
         sdir = os.path.join(src, slug)
-        if not os.path.isdir(sdir) or (a.project and a.project not in slug):
+        if not os.path.isdir(sdir) or (project and project not in slug):
             continue
-        # a project's slug + its worktree slugs share the base project name (…--claude-worktrees-…)
-        proj = slug.replace("-Users-jared-Code-", "").split("--claude-worktrees-")[0]
+        proj = _project_of(slug)
         for fn in sorted(os.listdir(sdir)):
             if not fn.endswith(".jsonl"):
                 continue
             p = os.path.join(sdir, fn)
-            if a.since:
+            if since:
                 import datetime
-                if datetime.date.fromtimestamp(os.path.getmtime(p)).isoformat() < a.since:
+                if datetime.date.fromtimestamp(os.path.getmtime(p)).isoformat() < since:
                     continue
             jobs.append((p, proj))
-    jobs.sort(key=lambda j: os.path.getmtime(j[0]), reverse=True)   # newest first
-    if a.limit:
-        jobs = jobs[:a.limit]
+    jobs.sort(key=lambda j: os.path.getmtime(j[0]), reverse=True)   # newest first (most useful indexes first)
+    if limit:
+        jobs = jobs[:limit]
 
-    out = os.path.expanduser(a.out)
-    written = skipped = 0
+    written = skipped = fresh = 0
     for p, proj in jobs:
+        sid = os.path.splitext(os.path.basename(p))[0]
+        dpath = os.path.join(out, proj, sid + ".md")
+        # INCREMENTAL: skip a session already converted at/after its transcript's mtime (unless --rebuild)
+        if not rebuild and os.path.exists(dpath) and os.path.getmtime(dpath) >= os.path.getmtime(p):
+            written += 1
+            continue
         md = session_md(p, proj)
         if not md:
             skipped += 1
             continue
-        dproj = os.path.join(out, proj)
-        os.makedirs(dproj, exist_ok=True)
-        sid = os.path.splitext(os.path.basename(p))[0]
-        with open(os.path.join(dproj, sid + ".md"), "w", encoding="utf-8") as fh:
+        os.makedirs(os.path.dirname(dpath), exist_ok=True)
+        with open(dpath, "w", encoding="utf-8") as fh:
             fh.write(md + "\n")
         written += 1
-    print(f"sessions → {out}: {written} written · {skipped} empty/skipped (of {len(jobs)} transcripts)")
+        fresh += 1
+    return {"written": written, "skipped": skipped, "fresh": fresh, "total": len(jobs)}
+
+
+def main():
+    ap = argparse.ArgumentParser(description="convert Claude Code transcripts → drillable-context markdown")
+    ap.add_argument("--out", default="~/.drillable/sessions", help="output facts_dir (default ~/.drillable/sessions)")
+    ap.add_argument("--projects-dir", default=PROJECTS, help="~/.claude/projects (default)")
+    ap.add_argument("--project", help="only slugs containing this substring")
+    ap.add_argument("--since", help="only sessions dated >= YYYY-MM-DD (by file mtime)")
+    ap.add_argument("--limit", type=int, help="cap the number of sessions")
+    ap.add_argument("--rebuild", action="store_true", help="re-convert every session (ignore the incremental skip)")
+    a = ap.parse_args()
+    r = convert(a.out, a.projects_dir, a.project, a.since, a.limit, a.rebuild)
+    if r.get("error"):
+        sys.exit(r["error"])
+    print(f"sessions → {os.path.expanduser(a.out)}: {r['fresh']} new/updated · {r['written']} present "
+          f"· {r['skipped']} empty (of {r['total']} transcripts)")
 
 
 if __name__ == "__main__":

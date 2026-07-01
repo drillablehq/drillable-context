@@ -13,14 +13,26 @@ retrieval unit), with frontmatter `type: session` + `originSessionId:` so the en
 never "verified"). Thinking blocks are kept (capped) — they're the "what did the agent struggle with"
 signal; tool *results* are dropped (retrieval noise), tool *uses* noted by name.
 
+**Setup is one command, zero config** — good defaults, nothing to pick:
+
 ```
-# 1. convert (a slice, or all)
-python3 src/adapters/sessions.py --out ~/.drillable/sessions --project myrepo --since 2026-06-20
-# 2. point a config at it (configs/sessions.json: facts_dir = the --out dir)
-# 3. build + drill
-python3 src/seed.py --config configs/sessions.json
-#    → "how did we handle X", "what did agents struggle with", "when did I last touch Y" — grounded to the turn
+drillable-context sessions          # fresh user path: convert ~/.claude/projects → ~/.drillable/sessions,
+                                     # seed, and print the one line that wires the MCP. That's it.
 ```
+
+It writes a managed config (`~/.drillable/sessions.json`: adapter=sessions, embed on, doc2query off for a fast
+first index), converts INCREMENTALLY (re-runs touch only new sessions), auto-detects `OPENAI_API_KEY` (semantic;
+else keyword), and prints the `claude mcp add drillable-sessions …` line. Then drill:
+`"what did I do about X" / "what did agents struggle with" / "when did I last touch Y"` — grounded to the turn.
+
+**Updated user path: nothing.** Once the MCP is wired, the running server picks up new sessions on its own — a
+throttled, incremental auto-convert on query keeps the index current (`_auto_convert`). Re-run the command only
+to force a full `--rebuild`.
+
+Overrides (rarely needed): `--projects-dir`, `DRILLABLE_HOME` (managed dir), `DRILLABLE_SESSIONS_SOURCE`.
+
+*(Low-level: the converter `src/adapters/sessions.py` and `configs/config.example.json` still work standalone
+if you want a bespoke corpus.)*
 
 **Dogfooded (first cut, 20 recent sessions → 360 turn-chunks):** "preserve session logs across three
 accounts" → the exact turn that asked it (cosine 0.60, #1); "contested 100 km in miles fork" → the turn that

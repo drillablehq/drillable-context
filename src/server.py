@@ -125,6 +125,41 @@ def _auto_advance(cfg):
         return False
 
 
+# ── the sessions adapter (drill your own agent history) — managed defaults, zero config ──────────────
+SESSIONS_HOME = os.environ.get("DRILLABLE_HOME") or os.path.expanduser("~/.drillable")
+SESSIONS_CFG = os.path.join(SESSIONS_HOME, "sessions.json")
+SESSIONS_FACTS = os.path.join(SESSIONS_HOME, "sessions")
+SESSIONS_SOURCE = os.environ.get("DRILLABLE_SESSIONS_SOURCE") or os.path.expanduser("~/.claude/projects")
+
+
+def _import_sessions():
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "adapters"))
+    import sessions
+    return sessions
+
+
+def _auto_convert(cfg):
+    """For an `adapter: sessions` corpus, keep the facts_dir current by converting NEW transcripts from the
+    source (~/.claude/projects) — the 'updated user path', zero-command. Incremental + throttled (like the
+    auto-fetch), so the query hot path only ever touches genuinely-new sessions. Returns True iff it wrote
+    any fresh `.md` (→ the caller reseeds). Safe/best-effort: any error → False, the last good index stands."""
+    if cfg.get("adapter") != "sessions":
+        return False
+    marker = cfg["_db"] + ".autoconv"
+    try:
+        if os.path.exists(marker) and (time.time() - os.path.getmtime(marker)) < AUTO_FETCH_THROTTLE:
+            return False
+        open(marker, "a").close()
+        os.utime(marker, None)
+    except Exception:
+        pass
+    try:
+        r = _import_sessions().convert(cfg["facts_dir"], cfg.get("source") or SESSIONS_SOURCE)
+        return bool(r.get("fresh"))
+    except Exception:
+        return False
+
+
 def con(cfg):
     db = cfg["_db"]
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -133,7 +168,8 @@ def con(cfg):
     # absent, a fact changed since it was built (freshness), OR the DB's stamped schema version != the
     # code's — so a plugin update that changes SCHEMA self-heals on the next query instead of erroring
     # against a stale-shape DB. seed.main() rebuilds in place (.md stay the truth).
-    needs = (_auto_advance(cfg)
+    needs = (_auto_convert(cfg)                    # sessions adapter: pull in new transcripts (throttled)
+             or _auto_advance(cfg)
              or not os.path.exists(db)
              or facts_mtime(cfg) > os.path.getmtime(db)
              or _db_schema_version(db) != seed.SCHEMA_VERSION)
@@ -485,7 +521,54 @@ def handle(req, cfg, tools):
     return None
 
 
+def setup_sessions(argv):
+    """The FRESH user path — one command, zero config: `drillable-context sessions`. Writes a managed
+    config with good defaults, converts ~/.claude/projects → ~/.drillable/sessions, seeds, and prints the
+    one line that wires the MCP. Thereafter the server keeps it current on its own (see _auto_convert)."""
+    import argparse
+    ap = argparse.ArgumentParser(prog="drillable-context sessions",
+                                 description="index your Claude Code session history for grounded drilling")
+    ap.add_argument("--projects-dir", default=SESSIONS_SOURCE, help="~/.claude/projects (default)")
+    ap.add_argument("--rebuild", action="store_true", help="re-convert every session (ignore the incremental skip)")
+    a = ap.parse_args(argv)
+
+    os.makedirs(SESSIONS_FACTS, exist_ok=True)
+    cfg = {"name": "sessions", "adapter": "sessions", "facts_dir": SESSIONS_FACTS,
+           "source": os.path.expanduser(a.projects_dir), "oracle_repo": None, "standing_types": [],
+           "type_field": "type", "recursive": True, "embed": True, "doc2query": False, "rerank": False}
+    with open(SESSIONS_CFG, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh, indent=2)
+
+    print(f"drillable-context sessions — indexing {a.projects_dir}", file=sys.stderr)
+    r = _import_sessions().convert(SESSIONS_FACTS, a.projects_dir, rebuild=a.rebuild)
+    if r.get("error"):
+        sys.exit(r["error"])
+    print(f"  {r['fresh']} new/updated · {r['written']} sessions total", file=sys.stderr)
+
+    import seed
+    old = sys.argv
+    sys.argv = ["seed", "--config", SESSIONS_CFG]
+    try:
+        with contextlib.redirect_stdout(sys.stderr):
+            seed.main()
+    except SystemExit:
+        pass
+    finally:
+        sys.argv = old
+
+    key = "semantic (OPENAI_API_KEY found)" if os.environ.get("OPENAI_API_KEY") else \
+        "keyword only — set OPENAI_API_KEY for semantic search"
+    print(f"\n✓ session history indexed · {key}", file=sys.stderr)
+    print("  wire it as an MCP (once):", file=sys.stderr)
+    print(f"    claude mcp add drillable-sessions -- npx drillable-context --config {SESSIONS_CFG}", file=sys.stderr)
+    print("  then ask:  drillable-sessions_search \"what did I do about <x>\"  (scoped to the current project;"
+          " project=\"all\" spans every repo)", file=sys.stderr)
+    print("  new sessions are picked up automatically — re-run this only to force a rebuild.", file=sys.stderr)
+
+
 def main():
+    if sys.argv[1:2] == ["sessions"]:      # the fresh-user setup path (not the MCP stdio server)
+        return setup_sessions(sys.argv[2:])
     cfg = load_cfg(sys.argv[1:])
     tools = build_tools(cfg)
     for line in sys.stdin:

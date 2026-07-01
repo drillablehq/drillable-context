@@ -66,5 +66,40 @@ class TestSessionsAdapter(unittest.TestCase):
         os.unlink(p)
 
 
+class TestIncrementalConvert(unittest.TestCase):
+    """The 'updated user path' core: convert() is INCREMENTAL — a re-run touches only NEW/changed
+    sessions (fresh=0 when nothing changed), so the server's throttled auto-convert is cheap and only a
+    genuinely-new session triggers a reseed."""
+
+    def _projects(self):
+        d = tempfile.mkdtemp(prefix="proj-")
+        sdir = os.path.join(d, "-Users-x-Code-demo")
+        os.makedirs(sdir)
+        return d, sdir
+
+    def _session(self, sdir, sid, text):
+        with open(os.path.join(sdir, sid + ".jsonl"), "w") as fh:
+            fh.write(json.dumps({"type": "user", "timestamp": "2026-06-30T12:00:00Z",
+                                 "message": {"role": "user", "content": text}}) + "\n")
+
+    def test_incremental_skips_unchanged_then_picks_up_new(self):
+        proj, sdir = self._projects()
+        out = tempfile.mkdtemp(prefix="out-")
+        self._session(sdir, "s1", "first session about widgets")
+
+        r1 = sessions.convert(out, proj)
+        self.assertEqual(r1["fresh"], 1)                 # first run converts it
+
+        r2 = sessions.convert(out, proj)
+        self.assertEqual(r2["fresh"], 0)                 # nothing changed → no rewrite (cheap re-run)
+        self.assertEqual(r2["written"], 1)
+
+        self._session(sdir, "s2", "a new session about sprockets")
+        r3 = sessions.convert(out, proj)
+        self.assertEqual(r3["fresh"], 1)                 # only the NEW session is (re)written
+        self.assertEqual(r3["written"], 2)
+        self.assertTrue(os.path.exists(os.path.join(out, "demo", "s2.md")))  # emitted under its project
+
+
 if __name__ == "__main__":
     unittest.main()
