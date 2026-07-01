@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0
+
+Session history, now **painless** — one command to set up, zero to keep current — and robust at full scale.
+
+- **One-command setup** — `drillable-context sessions` converts `~/.claude/projects`, seeds, and prints the `claude mcp add` line. Zero config: it writes a managed `~/.drillable/sessions.json` with good defaults (semantic if `OPENAI_API_KEY` is present, else keyword; doc2query off for a fast first index), picks the paths for you, and converts incrementally.
+- **Stays current on its own** — once wired, the running server picks up new sessions automatically (a throttled, incremental convert on query); re-run the command only to force a rebuild. `--days N` bounds the first index for a fast start on a rate-limited key.
+- **Robust at scale** — the embedding path now retries a rate limit (429) or transient 5xx with backoff (honoring `Retry-After`), so a large first index *completes* instead of dying partway. Verified over 600 sessions (peak ~430 MB).
+
 ## 0.4.0
 
 Drill your own agent's session history — the first **source adapter** — plus project-scoped retrieval so a machine-wide install never crosses projects.
