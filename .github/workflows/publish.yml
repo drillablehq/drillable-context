@@ -1,10 +1,13 @@
-# Publishes drillable-context (the root npm package behind `npx drillable-context`) on a published
-# GitHub Release. Mirror of drillablehq/drillable-check's publish-cli.yml, adapted for the root package.
+# Publishes drillable-context (the npm package behind `npx drillable-context`) on a published GitHub
+# Release, via npm TRUSTED PUBLISHING (OIDC) — no NPM_TOKEN. GitHub Actions authenticates to npm with a
+# short-lived, workflow-scoped OIDC identity, so there is nothing to expire or rotate (the old granular
+# NPM_TOKEN lapsing is exactly what broke the v0.3.0 release). Provenance is generated automatically.
 #
-# ONE-TIME SETUP (repo admin): add an npm automation token as the `NPM_TOKEN` Actions secret
-#   (npmjs.com -> Access Tokens -> Generate -> "Automation"; Settings -> Secrets and variables -> Actions).
+# ONE-TIME SETUP (on npmjs.com, NOT here): drillable-context package -> Settings -> Trusted Publisher ->
+#   GitHub Actions -> organization "drillablehq", repository "context", workflow "publish.yml". Once that
+#   is in place no repository secret is needed. Trusted publishing requires a cloud-hosted runner.
 # TO SHIP: ensure package.json's version matches, merge, then cut a GitHub Release tagged v<version>
-#   (e.g. v0.1.0). The tag==version guard blocks a mismatched publish; provenance signs the build.
+#   (e.g. v0.4.0). The tag==version guard blocks a mismatched publish.
 name: publish
 
 on:
@@ -14,17 +17,19 @@ on:
 
 permissions:
   contents: read
-  id-token: write          # required for `npm publish --provenance`
+  id-token: write          # required for OIDC trusted publishing (short-lived npm auth + provenance)
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest          # trusted publishing requires a cloud-hosted runner
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"        # trusted publishing needs node >= 22.14 and npm >= 11.5.1
           registry-url: "https://registry.npmjs.org"
+      - name: Ensure npm supports trusted publishing (>= 11.5.1)
+        run: npm install -g npm@latest
       - name: Release tag must match package.json version
         if: github.event_name == 'release'
         run: |
@@ -34,7 +39,5 @@ jobs:
             echo "::error::release tag ${GITHUB_REF_NAME} does not match version ${PKG} - bump package.json or retag"
             exit 1
           fi
-      - name: Publish to npm
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish to npm (OIDC — no token; provenance is automatic)
+        run: npm publish --access public
