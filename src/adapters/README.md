@@ -33,9 +33,20 @@ Only `sessions.py` is Claude Code specific (the `.jsonl` format). The engine, th
 `provenance` label are agent-neutral, so another agent (Cursor / Aider / Codex / Cline …) is a NEW adapter
 emitting the same `.md` — a parser, not a rewrite.
 
+### Project scope (shipped)
+
+The store is indexed machine-wide, but a query is **scoped to one project by default** so a user-level
+install never contaminates one project's drills with another's. `search` takes `project=`:
+- `project="myrepo"` → only that project's facts (`— scoped to project "myrepo"`).
+- `project="all"` → every project, each hit **labelled** by project (`slug · project`) — cross-project is
+  never silent.
+- default → the config's `default_project`, else the cwd-derived project. An implicit default that matches
+  nothing falls through to **all** (never a silent total-miss); an *explicit* project that matches nothing
+  abstains honestly.
+
+The `project` column comes from each fact's frontmatter (seed.py, schema v2); non-session corpora (no
+`project`) are unaffected — the filter only engages when the corpus carries projects.
+
 ### Not yet (follow-ups)
 
-- **Project-scoped retrieval by default.** The store is machine-wide; scoping a query to the current
-  project (cwd-derived slug + worktree slugs) so a user-level install doesn't contaminate one project's
-  drills with another's needs a `project` column (from frontmatter) + a search filter (`--all` opt-in).
 - Incremental re-convert (only new sessions); a `bin/` entry; per-agent adapters beyond Claude Code.

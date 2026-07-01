@@ -228,13 +228,42 @@ def _retriever(cfg):
     return "keyword", 'keyword (set "embed": true + OPENAI_API_KEY for semantic — ~94% vs ~67% recall@3)'
 
 
-def v_search(cfg, query=""):
+def _current_project():
+    """The cwd-derived project name — the default retrieval scope for a session corpus (the settled
+    'current-project by default'). Best-effort; the plugin passes project= explicitly when it knows better."""
+    try:
+        return os.path.basename(os.getcwd()) or None
+    except Exception:
+        return None
+
+
+def v_search(cfg, query="", project=None):
     if not toks(query):
         return "empty query."
     rows = con(cfg).execute(
         "SELECT c.slug AS slug, c.heading AS heading, c.text AS text, c.vector AS vector, "
-        "m.title AS title, m.grounding AS grounding, m.stale AS stale "
+        "m.title AS title, m.grounding AS grounding, m.stale AS stale, m.project AS project "
         "FROM chunk c JOIN memory m ON m.slug = c.slug WHERE m.serving='queryable'").fetchall()
+    # PROJECT SCOPE (session corpora): filter to one project's facts so a user-level install never
+    # contaminates one project's drills with another's. Explicit `project=` wins; else the config's
+    # default_project; else the cwd-derived project. `project='all'` (or a corpus with no projects) spans
+    # everything. An IMPLICIT default that matches nothing falls back to all (never a silent total-miss); an
+    # EXPLICIT project that matches nothing abstains honestly. Every hit is project-labelled below.
+    scope_note = ""
+    if any(r["project"] for r in rows):
+        explicit = project is not None
+        scope = project if explicit else (cfg.get("default_project") or _current_project())
+        if scope and str(scope).lower() != "all":
+            scoped = [r for r in rows if r["project"] == scope]
+            if scoped:
+                rows, scope_note = scoped, f'\n— scoped to project "{scope}" (project="all" spans every project)'
+            elif explicit:
+                return f'no record — no facts in project "{scope}" (an honest abstention, not a guess).'
+            # implicit default matched nothing → fall through to all (no silent blank)
+        if not scope_note:
+            projs = sorted({r["project"] for r in rows if r["project"]})
+            if len(projs) > 1:
+                scope_note = f'\n— spanning {len(projs)} projects (pass project="<name>" to scope)'
     qvec = None
     if rows and all(r["vector"] for r in rows) and embed.available():
         ev = embed.embed([query])
@@ -266,9 +295,12 @@ def v_search(cfg, query=""):
     out = [f'search "{query}" → top {len(scored)}:']
     for sc, r in scored:
         sec = f" § {r['heading']}" if r["heading"] else ""
+        proj = f" · {r['project']}" if r["project"] else ""   # cross-project hits are never silent (project-labelled)
         warn = " ⚠ may be stale" if (r["stale"] and r["stale"] != "[]") else ""
         snip = re.sub(r"\s+", " ", r["text"])[:140]
-        out.append(f"\n({sc:.2f}) {r['slug']}{sec}  [{MARK[r['grounding']]}]{warn}\n  {snip}…")
+        out.append(f"\n({sc:.2f}) {r['slug']}{proj}{sec}  [{MARK[r['grounding']]}]{warn}\n  {snip}…")
+    if scope_note:
+        out.append(scope_note)
     if qvec is None and cfg.get("embed"):          # they asked for semantic but got keyword — tell them once
         out.append(f"\n— retriever: {_retriever(cfg)[1]}")
     elif reranked:                                 # surface that a low-confidence query was LLM-reranked
@@ -394,8 +426,13 @@ def v_enumerate(cfg, by="collection", kind=""):
 
 def build_tools(cfg):
     n = cfg["name"]
-    spec = [("search", "Search the fetch-on-demand facts (decisions, conventions, gotchas). Abstains on a miss.",
-             {"query": {"type": "string"}}, ["query"], lambda a: v_search(cfg, **a)),
+    spec = [("search", "Search the fetch-on-demand facts (decisions, conventions, gotchas). Abstains on a miss. "
+             "For a session corpus, scope defaults to the current project; pass project=\"<name>\" to target "
+             "one, or project=\"all\" to span every project.",
+             {"query": {"type": "string"},
+              "project": {"type": "string", "description": "optional — scope to one project (session corpora); "
+                          "'all' spans every project. Defaults to the current project."}},
+             ["query"], lambda a: v_search(cfg, **a)),
             ("enumerate",
              "The complete set by category (collection / grounding / type / serving) + a completeness bit — "
              "the broad 'what does this corpus hold' view search can't give. Pass kind= to list one "
